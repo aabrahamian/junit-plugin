@@ -88,16 +88,19 @@ public class JUnitResultArchiver extends Recorder implements SimpleBuildStep, JU
      * If true, don't throw exception on missing test results or no files found.
      */
     private boolean allowEmptyResults;
+    private boolean makeUnstable;
 
     @DataBoundConstructor
     public JUnitResultArchiver(String testResults) {
         this.testResults = testResults;
+        setMakeUnstable(true);
     }
 
     @Deprecated
     public JUnitResultArchiver(String testResults,
             DescribableList<TestDataPublisher, Descriptor<TestDataPublisher>> testDataPublishers) {
         this(testResults, false, testDataPublishers);
+        setMakeUnstable(true);
     }
 
     @Deprecated
@@ -106,6 +109,7 @@ public class JUnitResultArchiver extends Recorder implements SimpleBuildStep, JU
             boolean keepLongStdio,
             DescribableList<TestDataPublisher, Descriptor<TestDataPublisher>> testDataPublishers) {
         this(testResults, keepLongStdio, testDataPublishers, 1.0);
+        setMakeUnstable(true);
     }
 
     @Deprecated
@@ -119,6 +123,22 @@ public class JUnitResultArchiver extends Recorder implements SimpleBuildStep, JU
         setTestDataPublishers(testDataPublishers == null ? Collections.<TestDataPublisher>emptyList() : testDataPublishers);
         setHealthScaleFactor(healthScaleFactor);
         setAllowEmptyResults(false);
+        setMakeUnstable(true);
+    }
+
+    @Deprecated
+    public JUnitResultArchiver(
+            String testResults,
+            boolean keepLongStdio,
+            DescribableList<TestDataPublisher, Descriptor<TestDataPublisher>> testDataPublishers,
+            double healthScaleFactor,
+            boolean makeUnstable) {
+        this.testResults = testResults;
+        setKeepLongStdio(keepLongStdio);
+        setTestDataPublishers(testDataPublishers == null ? Collections.<TestDataPublisher>emptyList() : testDataPublishers);
+        setHealthScaleFactor(healthScaleFactor);
+        setAllowEmptyResults(false);
+        setMakeUnstable(makeUnstable);
     }
 
     private TestResult parse(String expandedTestResults, Run<?,?> run, @Nonnull FilePath workspace, Launcher launcher, TaskListener listener)
@@ -132,7 +152,7 @@ public class JUnitResultArchiver extends Recorder implements SimpleBuildStep, JU
                                     String expandedTestResults, Run<?,?> run, @Nonnull FilePath workspace,
                                     Launcher launcher, TaskListener listener)
             throws IOException, InterruptedException {
-        return new JUnitParser(task.isKeepLongStdio(), task.isAllowEmptyResults())
+        return new JUnitParser(task.isKeepLongStdio(), task.isAllowEmptyResults(), task.isMakeUnstable())
                 .parseResult(expandedTestResults, run, pipelineTestDetails, workspace, launcher, listener);
     }
 
@@ -152,8 +172,15 @@ public class JUnitResultArchiver extends Recorder implements SimpleBuildStep, JU
             TaskListener listener) throws InterruptedException, IOException {
         TestResultAction action = parseAndAttach(this, null, build, workspace, launcher, listener);
 
-        if (action != null && action.getResult().getFailCount() > 0)
-            build.setResult(Result.UNSTABLE);
+        if (action != null && action.getResult().getFailCount() > 0) {
+            // skip marking unstable if config tells us so
+            if (this.isMakeUnstable()) {
+                build.setResult(Result.UNSTABLE);
+                listener.getLogger().println(Messages.JUnitResultArchiver_ChangeState("UNSTABLE"));
+            } else {
+                listener.getLogger().println(Messages.JUnitResultArchiver_UnstableOverriden());
+            }
+        }
     }
 
     public static TestResultAction parseAndAttach(@Nonnull JUnitTask task, PipelineTestDetails pipelineTestDetails,
@@ -290,6 +317,17 @@ public class JUnitResultArchiver extends Recorder implements SimpleBuildStep, JU
         this.allowEmptyResults = allowEmptyResults;
     }
 
+    /**
+     *
+     * @return the makeUnstable
+     */
+    public boolean isMakeUnstable() {
+        return makeUnstable;
+    }
+
+    @DataBoundSetter public final void setMakeUnstable(boolean makeUnstable) {
+        this.makeUnstable = makeUnstable;
+    }
 
     private static final long serialVersionUID = 1L;
 
